@@ -2,6 +2,20 @@
 
 All notable changes to this MCP project will be documented in this file.
 
+## 0.1.0 - 2026-09-30 (yandex-api-mcp branch)
+
+- Rewrote the root Russian README as a standalone first-install guide for all six services, OAuth permissions, Cloud keys, project discovery, MCP clients, ChatGPT Tunnel, security and troubleshooting; aligned the English summary and deployment guides.
+- Fixed the new `yp-api` onboarding path: persist requested OAuth scopes when Yandex omits them from token responses, make unconfigured Tunnel optional in `doctor`, and explain that Wordstat uses Cloud credentials rather than Direct OAuth.
+- Repaired live agent report failures: Metrika geo dimensions and metric aliases, required Direct report selection/period defaults, and structured Metrika HF errors. Changed only the Tunnel application unit to restart after a clean exit caused by an interrupted stdio subprocess; live read retests passed.
+- Recorded the owner's manual ChatGPT Yandex tool-catalog refresh and a new ChatGPT response of `3 — yandex_webmaster_hosts_list`; reconfirmed the deployed container, Tunnel health and `yp-api doctor`. The ChatGPT UI did not expose the underlying call trace.
+- Completed Webmaster OAuth reauthorization with `webmaster:verify`, fixed the required popular-query sort and broken-internal-links paths, and passed 34 of 39 live read-only Webmaster tools (five require absent task/request IDs or a user sitemap).
+- Switched only the existing `tunnel-client.service` profile to the new MCP after backing it up; the old Direct container remains healthy. Live OAuth refresh and post-refresh API probes passed.
+- Renamed the new distribution to `yandex-api-mcp` and added a unified gateway around the webkoth-derived Webmaster/Direct/Metrika core and the existing Python Wordstat/Audience/Search API modules.
+- Added shared OAuth state with automatic refresh, token-free projects registry, public read-only guards, write confirmation, Docker Compose, `yp-api` CLI and a prepared OpenAI Tunnel wrapper.
+- Deployed the new public server alongside the old MCP on Proxmox LXC 123. Real read probes passed for Direct, Metrika, Wordstat, Audience and Search API. Webmaster host-level reads require an additional OAuth scope; the old Tunnel remains active.
+- Hardened the mixed `metrica.logs_export` tool: public mode now blocks `create`, `clean`, and `cancel` at both gateway and Python backend. Mutating Python calls to Logs API, Direct, Metrika Management and Audience are never retried automatically. Extended gateway classification to cover mutating human-friendly Direct/Metrika tools.
+- Added the migration audit, deployment guides, end-to-end probe and regression tests. See `MIGRATION_REPORT.md`.
+
 ## Unreleased
 
 - Docs: Russian README is now the root README; the English project overview is available as `README.en.md`.

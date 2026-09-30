@@ -1,147 +1,183 @@
-# Yandex Direct + Метрика MCP
+# yandex-api-mcp
 
-[Русский](README.md) · [English](README.en.md) · [Установщик для Linux](docs/ru/installer.md) · [Руководство по MCP и инструментам upstream](https://github.com/georgy-agaev/yandex-direct-metrica-mcp)
+**Один MCP-сервер для Яндекс.Вебмастера, Директа, Метрики, Wordstat, Аудиторий и Search API.** Его можно подключить к ChatGPT и другим MCP-клиентам, чтобы запрашивать данные о сайтах, рекламе, посещениях и поиске обычным языком.
 
-Это публичный форк MCP-сервера для работы с данными **Яндекс Директа и Метрики** через совместимый AI-клиент. В исходном сервере также есть инструменты Wordstat, Яндекс Поиска и Аудиторий. Форк сохраняет лицензию Apache-2.0 и добавляет русский установщик Linux, управление проектами одной командой `yp` и необязательное подключение к ChatGPT через частный OpenAI Tunnel.
+Установка по умолчанию работает **только на чтение**. Инструменты изменения данных скрыты и заблокированы сервером. Несколько проектов могут использовать один OAuth-токен Яндекса; access token обновляется автоматически при наличии refresh token.
 
-Каждый владелец подключает **свои** учётные данные Яндекса и OpenAI. Здесь нет общей базы клиентов и нет встроенных ключей.
+## Возможности
 
-## Что проще всего установить
+| Сервис | Данные |
+| --- | --- |
+| Вебмастер | Сайты, диагностика, запросы, индексирование, sitemap, ссылки, лимит переобхода |
+| Директ | Клиенты агентства, кампании, группы, объявления, ключевые фразы, ставки, отчёты |
+| Метрика | Счётчики, цели, сегменты, обычные отчёты, чтение готовых выгрузок Logs API |
+| Wordstat | Частотность фраз, динамика, регионы, подсказки |
+| Аудитории | Сегменты, пиксели и статистика при наличии прав |
+| Search API | Поисковая выдача через Yandex Cloud |
 
-Для Debian/Ubuntu на VM, VPS или LXC, где уже можно запускать Docker:
+Один MCP-шлюз соединяет TypeScript-ядро для Вебмастера/Директа/Метрики и Python-модули для остальных сервисов. Доступность конкретных данных зависит от прав вашего аккаунта. Реальные read-запросы к шести API проверялись на работающем сервере; операции записи в боевых аккаунтах не тестировались.
 
-```bash
-git clone https://github.com/5iNeX/yandex-direct-metrica-mcp.git
-cd yandex-direct-metrica-mcp
-./install.sh --plan
-sudo ./install.sh --install-deps
-```
+## Перед установкой
 
-Команда `--plan` показывает параметры установки. После установки используй:
+Нужны Debian 12/13 или Ubuntu 22.04/24.04, `sudo`, Git, Python 3, Docker Engine и Docker Compose v2. Подойдёт VPS, VM или LXC, в котором уже разрешён Docker. Если Docker не установлен, начните с [официальной инструкции для Debian](https://docs.docker.com/engine/install/debian/) или [Ubuntu](https://docs.docker.com/engine/install/ubuntu/). Проверьте `docker compose version`.
 
-```bash
-yp
-```
+Также нужны:
 
-Откроется русское меню для подключения Яндекса, OpenAI Tunnel и проектов мониторинга. Если серверные файлы уже установлены, `yp setup` продолжает мастер. Для диагностики служит `yp doctor`, а `yp connector` показывает Tunnel ID и шаги подключения в ChatGPT.
+- Яндекс-аккаунт с доступом к нужным сайтам Вебмастера, кабинетам Директа, счётчикам Метрики и Аудиториям.
+- Своё OAuth-приложение Яндекса с Client ID и Client Secret.
+- Для Wordstat и Search API отдельно: папка Yandex Cloud, сервисный аккаунт и API key.
 
-Подробная инструкция с требованиями к ОС, OAuth, правам, службам и восстановлению: [установка Linux и подключение ChatGPT](docs/ru/installer.md).
+OAuth не создаёт права на чужие сайты и кабинеты. Wordstat и Search API используют **ключ Yandex Cloud**, а не OAuth-токен Директа.
 
-### Поддерживаемая установка
+## Шаг 1. Создайте приложение Яндекс OAuth
 
-- Debian 12/13 или Ubuntu 22.04/24.04, Python 3.10+, systemd.
-- Linux amd64 или arm64 и Docker Engine 28+ с Compose plugin.
-- VPS, VM, физический сервер или LXC, в котором администратор уже разрешил Docker.
+1. Войдите на [oauth.yandex.ru](https://oauth.yandex.ru/) под нужным Яндекс-аккаунтом и создайте приложение.
+2. Укажите redirect URI: **`https://oauth.yandex.ru/verification_code`**. Этот адрес использует мастер авторизации.
+3. Включите права на нужные сервисы:
 
-Установщик не создаёт Proxmox-контейнер, не открывает публичные MCP-порты и не перестраивает сетевые маршруты. Сервер MCP слушает `127.0.0.1:8000`. Туннель устанавливается отдельной systemd-службой. Если указан HTTP/HTTPS CONNECT proxy, его получает только процесс Tunnel.
+   | Сервис | OAuth-разрешения |
+   | --- | --- |
+   | Вебмастер | `webmaster:hostinfo` **и** `webmaster:verify` |
+   | Директ | `direct:api` |
+   | Метрика | `metrika:read` |
+   | Аудитории | `audience:read` |
+   | Запись в Метрику в отдельной pro-сборке | `metrika:write` |
 
-## Настройка Яндекса
+4. Сохраните приложение и подготовьте Client ID и Client Secret. Для работы с боевым Директом приложению нужен одобренный доступ к Direct API; доступ к конкретным кабинетам задаётся в Директе.
 
-Мастер поддерживает Direct + Метрику, только Direct или только Метрику. Audience можно подключить дополнительно. Создай собственное OAuth-приложение в Яндексе, выдай ему нужные права и пройди вход из мастера. Client Secret, токены и код подтверждения вводятся без отображения в терминале и сохраняются локально.
+Команда `yp-api oauth` по умолчанию запрашивает все read-разрешения из таблицы. Если нужны отдельные сервисы, укажите их: `sudo yp-api oauth webmaster metrika`. После добавления нового разрешения в Яндексе **повторите OAuth**: обновление access token не добавляет scope.
 
-Используются права:
-
-- `direct:api` — для Директа. Для API Direct приложению требуется одобрение production/full доступа.
-- `metrika:read` — для чтения Метрики.
-- `audience:read` — для Audience, если она нужна.
-
-По умолчанию используется redirect URI `https://oauth.yandex.ru/verification_code`. OAuth-код обменивается на токены по authorization-code flow с PKCE. Перед переключением мастер проверяет доступ к выбранным API и ждёт запуска MCP.
-
-Можно ввести существующий access token. Для автоматического продления нужен refresh token; без него придётся повторить вход вручную. Мастер не выдаёт права Яндекса за владельца приложения и не отзывает прежнюю авторизацию.
-
-## Проекты и аккаунты
-
-Реестр проектов при установке пуст. Добавляй только те Direct-клиенты и счётчики Метрики, которые хочешь включить в собственный реестр.
-
-В меню `yp` можно:
-
-- найти доступные Direct-клиенты и счётчики Метрики;
-- добавить только Direct, только Метрику или связанный профиль;
-- связать ранее добавленные профили после подтверждения;
-- добавить Direct по известному логину, если API не показывает делегированный кабинет;
-- просмотреть записи, обновить реестр MCP или убрать запись из локального мониторинга.
-
-Сопоставление названия Direct с сайтом счётчика — подсказка. Перед связью мастер просит подтверждение. Исключение проекта из реестра не удаляет данные или настройки в Яндексе. Перед изменениями создаётся резервная копия локального реестра.
-
-API Direct не всегда перечисляет все клиентские кабинеты, к которым у пользователя есть доступ. В этом случае логин можно ввести вручную; мастер проверит доступ к чтению кампаний. Логин Direct и владелец счётчика Метрики могут быть разными.
-
-Пример записи в `accounts.json`:
-
-```json
-{
-  "accounts": [
-    {
-      "id": "example-project",
-      "name": "Пример сайта",
-      "direct_client_login": "example-direct-login",
-      "metrica_counter_ids": ["12345678"]
-    }
-  ]
-}
-```
-
-Путь установщика: `/opt/yandex-mcp/state/accounts.json`. Для Direct-only оставь `metrica_counter_ids` пустым или опусти поле; для Metrica-only опусти `direct_client_login`. Команда `yp --show` показывает локальные записи, `yp --discover` ищет новые доступные объекты, `yp --verify` перезагружает реестр в MCP и сверяет результат.
-
-Реестр помогает выбирать проекты и строить отчёты. Он не выдаёт права в Яндекс API: доступ определяется OAuth-учётной записью и разрешениями в Яндексе.
-
-## Подключение к ChatGPT через Tunnel
-
-Tunnel позволяет подключить локальный MCP-сервер к ChatGPT без публичного MCP-порта. Для этого владелец создаёт Tunnel в OpenAI, привязывает его к своему ChatGPT workspace и передаёт установщику Tunnel ID и runtime API key с правами Tunnels Read + Use.
+## Шаг 2. Установите приложение
 
 ```bash
-yp tunnel
-yp doctor
-yp connector
+git clone https://github.com/5iNeX/yandex-api-mcp.git
+cd yandex-api-mcp
+sudo ./install.sh
 ```
 
-Перед запросом ключа Tunnel мастер проверяет HTTPS-доступ к `api.openai.com`. Если нужен proxy, укажи существующий HTTP/HTTPS CONNECT proxy: он используется только `tunnel-client`. У tunnel-client v0.0.15 адреса SOCKS не поддерживаются. Ключ администратора OpenAI для запуска Tunnel не нужен.
+Установщик спросит Client ID и Client Secret; секрет вводится скрыто. Исходники попадут в `/opt/yandex-api-mcp`, OAuth и реестр проектов — в `state/`, ключи приложения — в `secrets/`. Эти каталоги исключены из Git и не встраиваются в Docker image. Установщик не создаёт VM/LXC и не меняет сеть хоста.
 
-В ChatGPT создай developer-mode app, выбери Connection: Tunnel и укажи Tunnel ID из `yp connector`. Затем попроси ChatGPT вызвать `accounts.list` или показать доступные инструменты. Для шага с developer mode нужны разрешения workspace. Публикация в публичном каталоге ChatGPT — отдельный процесс.
+Далее используется команда `yp-api`. Если короткое имя `yp` свободно, установщик создаст и его; существующую команду `yp` он не заменяет.
 
-Служба Tunnel работает от отдельного системного пользователя. Секреты передаются systemd через `LoadCredential`, а не прописываются открытым текстом в unit-файл. Docker/MCP и запросы к Яндексу используют обычный маршрут сервера; установщик не создаёт VPN.
+## Шаг 3. Авторизуйтесь и запустите MCP
 
-## Проверка и обслуживание
+```bash
+sudo yp-api oauth
+sudo yp-api service start
+sudo yp-api doctor
+sudo yp-api discover
+```
+
+`oauth` покажет ссылку. Откройте её в браузере, подтвердите доступ и вставьте код **в терминал мастера**. Не публикуйте код и токены в чате или Git. Мастер сохранит access/refresh token локально без вывода их значений.
+
+`discover` покажет доступные сайты Вебмастера, счётчики Метрики и Direct-клиентов. Новый MCP слушает только `127.0.0.1:8001` на сервере. На чистой машине `doctor` может показать `SKIP Tunnel service (optional)`: Tunnel для ChatGPT настраивается отдельно.
+
+## Шаг 4. Настройте Wordstat и Search API
+
+Этот шаг нужен для всех шести сервисов. Если Wordstat и Search API не требуются, переходите к проверке остальных API.
+
+1. В [Yandex Cloud](https://console.yandex.cloud/) выберите папку с Search API и скопируйте её **Folder ID**.
+2. Создайте в этой папке сервисный аккаунт, назначьте роль `search-api.webSearch.user` и создайте для него API key. Если для ключа задаются области действия, включите `yc.search-api.execute`. См. [документацию Search API](https://yandex.cloud/ru/docs/search-api/).
+3. На сервере откройте файл:
+
+   ```bash
+   sudo nano /opt/yandex-api-mcp/secrets/yandex.env
+   ```
+
+   Добавьте две строки со своими значениями:
+
+   ```dotenv
+   YANDEX_SEARCH_API_FOLDER_ID=ваш_folder_id
+   YANDEX_SEARCH_API_API_KEY=ваш_api_key
+   ```
+
+4. Закройте файл и восстановите права доступа:
+
+   ```bash
+   sudo chown 0:10001 /opt/yandex-api-mcp/secrets/yandex.env
+   sudo chmod 440 /opt/yandex-api-mcp/secrets/yandex.env
+   sudo yp-api service restart
+   ```
+
+Не вставляйте ключ в shell-команды, сохраняемые в истории. Folder ID должен соответствовать папке сервисного аккаунта.
+
+## Шаг 5. Проверьте установку
+
+```bash
+sudo yp-api service status
+sudo yp-api doctor
+sudo yp-api verify
+```
+
+`verify` выполняет read-запросы через MCP и выводит статусы и форму ответа без токенов и сырых данных. Для полной зелёной проверки настройте ключи Wordstat/Search API. Если они не настроены, их строки могут показать ошибку, хотя остальные сервисы работают.
+
+## Несколько проектов
+
+Один OAuth-токен используется для нескольких профилей. Сначала получите идентификаторы через `sudo yp-api discover`. Затем добавьте связи проекта:
+
+```bash
+sudo yp-api project add my-site \
+  --name 'Мой сайт' \
+  --direct-login client-login \
+  --counter 12345678 \
+  --host 'https:example.com:443'
+sudo yp-api project list
+sudo yp-api service restart
+```
+
+Замените логин, ID счётчика и `host_id` своими значениями. Можно указать несколько `--counter` и `--host` или пропустить неиспользуемые поля. `sudo yp-api project remove my-site` удаляет **только локальный профиль**, не данные Яндекса. При работе с несколькими клиентами указывайте проект в вызове MCP явно.
+
+## Подключение клиента
+
+### Claude, Codex, Cursor и другие локальные MCP-клиенты
+
+На той же машине используйте stdio-команду:
+
+```bash
+docker exec -i yandex-api-mcp-yandex-api-mcp-1 node gateway/index.mjs
+```
+
+Укажите её в настройках MCP-клиента. Локальный SSE endpoint: `http://127.0.0.1:8001/sse`. Он не доступен напрямую с другого компьютера. Доступ к Docker обычно означает широкие права на сервере, поэтому для общего сервера используйте отдельный ограниченный wrapper.
+
+### ChatGPT через OpenAI Secure MCP Tunnel
+
+Для ChatGPT нужен **отдельный OpenAI Tunnel**: собственный Tunnel ID, runtime API key с правами **Tunnels Read + Use** и возможность подключать developer-mode приложения в вашем workspace. Следуйте [официальной инструкции OpenAI](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels): установите `tunnel-client`, создайте Tunnel и задайте для его MCP-канала stdio-команду выше.
+
+Запускайте Tunnel как systemd-службу с автозапуском и `Restart=always`. Храните runtime key через systemd credentials, а для отдельного пользователя службы предоставьте только право запуска фиксированного root-owned wrapper вместо членства в группе `docker`. Проверьте:
+
+```bash
+sudo tunnel-client health --port 8080 --require-control-plane-poll --json
+sudo yp-api tunnel status
+```
+
+Затем подключите Tunnel ID в приложении ChatGPT, обновите его каталог инструментов и попросите выполнить read-вызов `yandex_webmaster_hosts_list`. Публичный MCP-порт для этого не нужен. `yp-api` не создаёт Tunnel и ключ OpenAI автоматически: это отдельные действия владельца workspace.
+
+## Управление и безопасность
 
 | Команда | Назначение |
 | --- | --- |
-| `yp` | Открыть русское меню проектов |
-| `yp setup` | Продолжить первичную настройку |
-| `yp oauth` | Повторно подключить Яндекс OAuth |
-| `yp resume` | Повторить проверку сохранённого OAuth-кандидата |
-| `yp refresh` | Обновить OAuth-токен, если подошёл срок |
-| `yp --show` | Показать реестр без меню |
-| `yp --discover` | Найти доступные Direct-клиенты и счётчики |
-| `yp --verify` | Перезагрузить и проверить реестр MCP |
-| `yp doctor` | Проверить локальный MCP и Tunnel |
-| `yp connector` | Показать сведения для подключения ChatGPT |
+| `sudo yp-api doctor` | Проверить runtime, OAuth, файлы и связь с API |
+| `sudo yp-api discover` | Показать доступные объекты Яндекса |
+| `sudo yp-api project list` | Показать локальные проекты |
+| `sudo yp-api refresh` | Принудительно обновить access token |
+| `sudo yp-api verify` | Выполнить read-only smoke через MCP |
+| `sudo yp-api logs --tail 80` | Посмотреть логи контейнера |
+| `sudo yp-api service status` | Проверить контейнер |
+| `sudo yp-api connector info` | Получить локальный адрес и stdio-команду |
 
-Для установки с настройками по умолчанию статус служб можно проверить так:
+Публичный Docker image блокирует write-вызовы, включая `create/clean/cancel` в Metrika Logs API. Отдельная pro-сборка имеет preview и явное подтверждение, но не публикуется автоматически. OAuth хранится в `/opt/yandex-api-mcp/state/oauth.json`, Client Secret и Search API key — в `/opt/yandex-api-mcp/secrets/`. Перед обновлением сохраните защищённую копию этих каталогов; никому не отправляйте их содержимое.
 
-```bash
-sudo systemctl status yandex-mcp-tunnel-yandex-mcp.service
-sudo systemctl list-timers yandex-mcp-refresh-yandex-mcp.timer
-sudo docker compose --project-name yandex-mcp \
-  --file /opt/yandex-mcp/compose.yaml ps
-```
+Чтобы обновить сервер, получите новую версию исходников в вашем checkout и снова выполните `sudo ./install.sh`. Установщик сохраняет `state/` и `secrets/` и пересобирает приложение, если OAuth уже настроен. Остановка только этого MCP: `sudo yp-api service stop`.
 
-Секретные файлы находятся в `/opt/yandex-mcp/secrets/`; каталог доступен root, файлы получают права `0600`. Не публикуй конфигурационные дампы Docker, содержимое secret-файлов или резервные копии OAuth.
+## Частые проблемы
 
-## Другие способы запуска
+| Симптом | Что проверить |
+| --- | --- |
+| `docker compose version` не работает | Установите Docker Engine и Compose plugin |
+| OAuth-код отклонён | Redirect URI должен быть `https://oauth.yandex.ru/verification_code`; получите новый код |
+| Вебмастер показывает сайты, но запросы по ним дают 403 | Нужны оба scope: `webmaster:hostinfo` и `webmaster:verify`, затем новая OAuth-авторизация |
+| Директ даёт 403 | Проверьте одобрение Direct API и права аккаунта/`Client-Login` |
+| Wordstat или Search API дают 401/403 | Сверьте Folder ID, роль сервисного аккаунта и scope ключа |
+| ChatGPT не видит новый инструмент | Проверьте готовность Tunnel и обновите каталог инструментов приложения |
 
-Установщик в первую очередь настраивает серверный сценарий с Direct, Метрикой и необязательным Audience. Исходный MCP также поддерживает Wordstat, Яндекс Поиск и более широкий набор Direct/Metrica-инструментов. Чтобы использовать их или подключить локальный клиент на macOS/Windows, настрой сервер исходным способом:
-
-```bash
-python3 scripts/setup.py
-```
-
-Скрипт предлагает настройки для нескольких MCP-клиентов. Дополнительные параметры, переменные окружения и описание MCP-инструментов смотри в [исходном README проекта](https://github.com/georgy-agaev/yandex-direct-metrica-mcp) и документации каталога `docs/`.
-
-Публичная сборка MCP по умолчанию работает в режиме read-only для управляемых объектов. Сервер также блокирует destructive действия Logs API в public-режиме. Экспорт данных, отчёты и локальное создание файлов отчёта остаются частью аналитических сценариев. Пакет PRO и его приватные плагины в этот установщик не входят.
-
-## Исходный код и вклад
-
-- Форк: [5iNeX/yandex-direct-metrica-mcp](https://github.com/5iNeX/yandex-direct-metrica-mcp)
-- Исходный проект: [georgy-agaev/yandex-direct-metrica-mcp](https://github.com/georgy-agaev/yandex-direct-metrica-mcp)
-- Лицензия: Apache-2.0.
-
-Перед отправкой изменений запусти тесты и не добавляй в репозиторий `.env`, токены, Client Secret, runtime API key Tunnel, реальные записи аккаунтов или данные аналитики.
+Лицензия проекта — [Apache-2.0](LICENSE); лицензия TypeScript-ядра — [MIT](core/LICENSE).

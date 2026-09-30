@@ -1,0 +1,17 @@
+{
+  "accounts": [
+    {
+      "id": "example",
+      "name": "Example project",
+      "direct_client_login": "agency-client-login",
+      "metrica_counter_ids": [12345678],
+      "webmaster_hosts": ["https:example.com:443"],
+      "audience": {},
+      "search": {},
+      "direct": {
+        "sandbox": false,
+        "limits": { "max_budget_change_pct": 30, "max_bid_change_pct": 50 }
+      }
+    }
+  ]
+}

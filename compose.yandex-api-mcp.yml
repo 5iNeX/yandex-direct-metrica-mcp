@@ -1,0 +1,34 @@
+services:
+  yandex-api-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.yandex-api-mcp
+      args:
+        MCP_EDITION: public
+        MCP_PUBLIC_READONLY: "true"
+    image: local/yandex-api-mcp:0.1.0
+    restart: unless-stopped
+    environment:
+      MCP_BIND_HOST: 0.0.0.0
+      MCP_PORT: "8001"
+      MCP_EDITION: public
+      MCP_PUBLIC_READONLY: "true"
+      YANDEX_REQUIRE_ALL_BACKENDS: "true"
+      YANDEX_OAUTH_FILE: /data/oauth.json
+      YANDEX_OAUTH_APP_FILE: /run/secrets/oauth-app.json
+      YANDEX_EXTRA_ENV_FILE: /run/secrets/yandex.env
+      YANDEX_PROJECTS_CONFIG: /data/projects.json
+    volumes:
+      - ./state:/data:rw
+      - ./secrets/oauth-app.json:/run/secrets/oauth-app.json:ro
+      - ./secrets/yandex.env:/run/secrets/yandex.env:ro
+    ports:
+      - "127.0.0.1:8001:8001"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    pids_limit: 128
+    mem_limit: 768m
+    tmpfs:
+      - /tmp:size=64m,mode=1777
